@@ -18,6 +18,54 @@ import re
 from .base import BaseBackend
 from .mixins import QuoteCharMixin
 
+class PCREBackend(BaseBackend, QuoteCharMixin):
+    """Generate PCRE backend for automata toolchain"""
+    identifier = "pcre"
+    active = True
+    config_required = False
+
+    reEscape = re.compile("([\\|()\[\]{}.^$+])")
+
+    def generateQuery(self, parsed):
+        return "'%s'" % self.generateNode(parsed.parsedSearch)  
+
+    def cleanValue(self, val):
+        val = super().cleanValue(val)
+        val = val.replace("'","'\"'\"'")
+        return re.sub("\\*", ".*", val)
+
+    def generateORNode(self, node):
+        return "(?:%s)" % "|".join([".*" + self.generateNode(val) for val in node])
+
+    def generateANDNode(self, node):
+        return "".join(["(?=.*%s)" % self.generateNode(val) for val in node])
+
+    def generateNOTNode(self, node):
+        return "(?!.*%s)" % self.generateNode(node.item)
+
+    def generateSubexpressionNode(self, node):
+        return "(?:.*%s)" % self.generateNode(node.items)
+
+    def generateListNode(self, node):
+        if not set([type(value) for value in node]).issubset({str, int}):
+            raise TypeError("List values must be strings or numbers")
+        return self.generateORNode(node)
+
+    def generateMapItemNode(self, node):
+        key, value = node
+        if value is None:
+            return self.generateNULLValueNode(node)
+        else:
+            return self.generateNode(value)
+
+    def generateValueNode(self, node):
+        return self.cleanValue(str(node))
+
+    def generateNULLValueNode(self, node):
+        key, value = node
+        return "(?!%s)" % key
+
+
 class GrepBackend(BaseBackend, QuoteCharMixin):
     """Generates Perl compatible regular expressions and puts 'grep -P -i' around it"""
     identifier = "grep"
